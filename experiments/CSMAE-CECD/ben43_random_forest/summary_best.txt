@@ -1,0 +1,11 @@
+n_estimators=50
+Recall macro: 22.96%
+Recall sample: 64.23%
+Recall micro: 57.48%
+F2 macro: 24.60%
+F2 sample: 64.91%
+F2 micro: 60.49%
+mAP macro: 38.12%
+mAP sample: 82.31%
+mAP micro: 76.26%
+Hamming loss: 4.10%

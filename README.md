@@ -1,3 +1,33 @@
+# CSMAE - Evaluation
+This is a fork of the original CSMAE repository by Hackstein et al. As part of my course work for the 'Hot Topics in Computer Vision' seminar, I evaluated the models proposed and trained by the original authors on the BigEarthNet dataset (only!) for Sentinel-1 imagery.
+
+## Requirements
+Here's what I did to get the model running on BEN:
+1. Download and unzip `BigEarthNet-S1` from [bigearth.net](https://bigearth.net/) into `csmae_data/BigEarthNet-S1-v1.0`
+2. Install BigEarthNet-encoder package to create an lmdb file, the format used by the scripts in the repository:
+```bash
+pip install bigearthnet-encoder
+cd csmae_data
+ben_encoder write-s1-lmdb-with-lbls ./BigEarthNet-S1-v1.0
+mv S1_lmdb.db BigEarthNetEncoded.lmdb
+```
+3. Recreate the Conda environment provided by the authors. I used WSL2.
+```bash
+conda env create --name csmae --file environment.yaml
+```
+4. I received the original model weights from the authors and put them into `trained_models/CSMAE-CECD`, `trained_models/CSMAE-CESD`, etc.
+
+## Running the models
+`run_model.py` can be used to run any of the four models on a given data subset (as defined by a CSV) and export the image features to a Pickle file, for example:
+```bash
+python run_model.py --model CSMAE-CESD --csv BigEarthNet-MM_19-classes_models/splits/train.csv --output features_out/CSMAE-CESD/train_CESD_19.pkl
+```
+For all arguments, see `run_model.py`. The generated Pickle file contains a tuple `(keys, labels, outputs)` where `keys` is a list of length `N` of all the sample keys, `labels` is a `N x 19` or `N x 43` boolean array containing the labels, and `outputs` is a `N x 768` array containing the encoder arrays/embeddings.
+
+---
+
+Original README:
+
 # Exploring Masked Autoencoders for Sensor-Agnostic Image Retrieval in Remote Sensing
 
 ![Alt text](csmae.png?raw=true "Model: Cross-Sensor Masked Autoencoders")

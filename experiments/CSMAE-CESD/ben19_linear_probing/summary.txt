@@ -1,0 +1,10 @@
+Recall macro: 86.13%
+Recall sample: 97.60%
+Recall micro: 97.12%
+F2 macro: 58.26%
+F2 sample: 65.87%
+F2 micro: 69.18%
+mAP macro: 53.95%
+mAP sample: 82.81%
+mAP micro: 69.52%
+Hamming loss: 31.53%
