@@ -2,6 +2,8 @@ from typing import List, Literal, Tuple
 from sklearn.metrics import classification_report, fbeta_score, hamming_loss, average_precision_score
 import pandas as pd
 import numpy as np
+import pickle
+from pathlib import Path
 
 from run_model import BEN19_LABELS, BEN43_LABELS
 
@@ -52,3 +54,35 @@ def get_ben_report(
     
     # reorder columns
     return report[["precision", "recall", "f1-score", "f2-score", "ap-score", "support"]], out
+
+def read_data(file: Path, classes: int):
+    """Reads data (keys, X, Y) from a pickle file.
+    Can adapt to the following formats: (keys, Y, X) or (keys, Y19, Y43, X) or (keys, Y43, Y19, X).
+
+    Args:
+        file (Path): Pickle file to read.
+        classes (int): Number of classes. 19 or 43.
+            If there are four values in the pickle file, the correct Y is selected based on this number.
+            If there are only three values, this number is ignored.
+
+    Raises:
+        ValueError: If the number of elements in the pickle file is not 3 or 4 or the number of classes is not part of it.
+
+    Returns:
+        3 np.ndarrays: keys, Y, X
+    """
+    with open(file, "rb") as f:
+        vals = pickle.load(f)
+        if len(vals) == 3:
+            keys, Y, X = vals
+        elif len(vals) == 4:
+            keys, _, _, X = vals
+            if vals[1].shape[1] == classes:
+                Y = vals[1]
+            elif vals[2].shape[1] == classes:
+                Y = vals[2]
+            else:
+                raise ValueError(f"Could not find labels in file {file}")
+        else:
+            raise ValueError(f"Invalid number of elements in file {file}")
+    return keys, Y, X

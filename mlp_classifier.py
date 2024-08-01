@@ -7,7 +7,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from pathlib import Path
 import matplotlib.pyplot as plt
-from eval_utils import get_ben_report
+from eval_utils import get_ben_report, read_data
 
 def prepare_dataloader(X: np.ndarray, Y: np.ndarray, device: torch.device, **dataloader_kwargs) -> torch.utils.data.DataLoader:
     X_tensor = torch.tensor(X, dtype=torch.float32, device=device)
@@ -54,17 +54,16 @@ def mlp_classifier(
     batch_size: int = 64,
     optim_supplier: Callable[[nn.Module], torch.optim.Optimizer] = lambda model: torch.optim.Adam(model.parameters()),
     criterion: nn.Module = nn.CrossEntropyLoss(),
+    classes: int = 19,
     verbose: bool = True,
 ) -> Dict[str, object]:
+    print("Classes:", classes)
     # Read data
-    with open(train_file, "rb") as f:
-        train_keys, Y_train, X_train = pickle.load(f)
+    train_keys, Y_train, X_train = read_data(train_file, classes)
     assert len(train_keys) == len(Y_train) == len(X_train), "train dimensions mismatch"
-    with open(val_file, "rb") as f:
-        val_keys, Y_val, X_val = pickle.load(f)
+    val_keys, Y_val, X_val = read_data(val_file, classes)
     assert len(val_keys) == len(Y_val) == len(X_val), "val dimensions mismatch"
-    with open(test_file, "rb") as f:
-        test_keys, Y_test, X_test = pickle.load(f)
+    test_keys, Y_test, X_test = read_data(test_file, classes)
     assert len(test_keys) == len(Y_test) == len(X_test), "test dimensions mismatch"
     assert X_train.shape[1] == X_val.shape[1] == X_test.shape[1], "feature dimensions mismatch"
     assert Y_train.shape[1] == Y_val.shape[1] == Y_test.shape[1], "label dimensions mismatch"
@@ -166,6 +165,7 @@ def main():
     parser.add_argument("--device", type=torch.device, default=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--silent", action="store_true")
+    parser.add_argument("--classes", type=int, default=19)
     args = parser.parse_args()
     mlp_classifier(
         args.train_file,
@@ -177,6 +177,7 @@ def main():
         early_stopping=args.early_stopping,
         device=args.device,
         batch_size=args.batch_size,
+        classes=args.classes,
         verbose=not args.silent,
     )
 

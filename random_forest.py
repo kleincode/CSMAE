@@ -1,12 +1,13 @@
 from typing import Dict, Optional, Literal, Union
 import pickle
 import numpy as np
+import json
 from pathlib import Path
 from tqdm import tqdm
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import hamming_loss
 import matplotlib.pyplot as plt
-from eval_utils import get_ben_report
+from eval_utils import get_ben_report, read_data
 
 def random_forest(
     train_file: Path,
@@ -20,6 +21,7 @@ def random_forest(
     max_features: Union[Literal["sqrt", "log2"], int, float] = 'sqrt',
     bootstrap: bool = False,
     n_jobs: int = -1,
+    classes: int = 19,
     verbose: bool = True,
     random_state: Optional[int] = 42,
 ) -> Dict[str, object]:
@@ -37,14 +39,11 @@ def random_forest(
         Dict[str, object]: _description_
     """
     # Read data
-    with open(train_file, "rb") as f:
-        train_keys, Y_train, X_train = pickle.load(f)
+    train_keys, Y_train, X_train = read_data(train_file, classes)
     assert len(train_keys) == len(Y_train) == len(X_train), "train dimensions mismatch"
-    with open(val_file, "rb") as f:
-        val_keys, Y_val, X_val = pickle.load(f)
+    val_keys, Y_val, X_val = read_data(val_file, classes)
     assert len(val_keys) == len(Y_val) == len(X_val), "val dimensions mismatch"
-    with open(test_file, "rb") as f:
-        test_keys, Y_test, X_test = pickle.load(f)
+    test_keys, Y_test, X_test = read_data(test_file, classes)
     assert len(test_keys) == len(Y_test) == len(X_test), "test dimensions mismatch"
     assert X_train.shape[1] == X_val.shape[1] == X_test.shape[1], "feature dimensions mismatch"
     assert Y_train.shape[1] == Y_val.shape[1] == Y_test.shape[1], "label dimensions mismatch"
@@ -126,6 +125,8 @@ def random_forest(
     ax.set_xlabel("n_estimators")
     ax.set_ylabel("Hamming loss")
     fig.savefig(str(out_folder / "n_estimators_validation.svg"))
+    with open(out_folder / "n_estimators_validation.json", "w") as f:
+        json.dump(scores, f)
     
     # Report
     report10, main_metrics10 = get_ben_report(Y_test, Y_test_scores10, decision_threshold=0.5)
@@ -167,6 +168,7 @@ def main():
     parser.add_argument("--n_jobs", type=int, default=-1)
     parser.add_argument("--silent", action="store_true")
     parser.add_argument("--random_state", type=int, default=42)
+    parser.add_argument("--classes", type=int, default=19)
     args = parser.parse_args()
     random_forest(
         args.train_file,
@@ -180,6 +182,7 @@ def main():
         max_features=args.max_features,
         bootstrap=args.bootstrap,
         n_jobs=args.n_jobs,
+        classes=args.classes,
         verbose=not args.silent,
         random_state=args.random_state,
     )

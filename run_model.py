@@ -5,7 +5,9 @@ from tqdm import tqdm
 import pickle
 import numpy as np
 import torch
+import torchvision.transforms as transforms
 from csv import reader as CSVReader
+from src.csmae_backbone import CSMAEBackbone
 from src.bigearthnet_dataset.BEN_lmdb_s1 import BENLMDBS1Reader
 from omegaconf import OmegaConf
 from typing import Dict, Callable, Tuple
@@ -19,9 +21,12 @@ from src.augmentations import (
     NCropAugmentation,
     build_transform_pipeline,
 )
+from src.bigearthnet_dataset.BEN_lmdb_utils import band_combi_to_mean_std
 
 from src.utils import Messages
 from src.vit_cmmae import CrossModalMaskedAutoencoderViT, vit_tiny, vit_small, vit_base, vit_large
+
+TransformFunction = Callable[[np.ndarray], torch.Tensor]
 
 BEN43_LABELS = {
     "Continuous urban fabric": 0,
@@ -99,18 +104,18 @@ def feature_list_to_onehot(lst: List[str], label_map: Dict[str, int] = BEN19_LAB
     assert res.sum() >= 1, "Result Tensor is all zeros - this is not allowed"
     return res
 
-def load_model(model_id: str, device: str) -> Tuple[CrossModalMaskedAutoencoderViT, FullTransformPipeline]:
+def load_model_legacy(model_id: str, device: str) -> Tuple[CrossModalMaskedAutoencoderViT, TransformFunction]:
     """Loads a trained model from a checkpoint, returning the model and the data augmentation pipeline.
     The model should be in ./trained_models/{model_id} with the following files:
     - *.ckpt: exactly one checkpoint file
-    - args.yaml: configuration file
+    - cfg.yaml: configuration file
 
     Args:
         model_id (str): 8-character-id of model name to be evaluated. See under ./trained_models
         device (int, optional): GPU device number. Defaults to 0.
     
     Returns:
-        Tuple[CrossModalMaskedAutoencoderViT, FullTransformPipeline]: Tuple containing the model and the data augmentation pipeline.
+        Tuple[CrossModalMaskedAutoencoderViT, TransformFunction]: Tuple containing the model and the data augmentation function.
     """
     # Copied and modified from retrieval.py
     path_to_model = f"./trained_models/{model_id}"
@@ -160,10 +165,65 @@ def load_model(model_id: str, device: str) -> Tuple[CrossModalMaskedAutoencoderV
 
     backbone.eval()
     backbone.to(device)
-    return backbone, transform
+    
+    def full_transform(img: np.ndarray):
+        # From BEN_DataModule_LMDB_Encoder.py, line 99ff
+        img = np.transpose(img,(2,1,0)) # (C, W, H) -> (H, W, C)
+        assert img.shape == (120, 120, 12), f"Expected shape (120, 120, 12), got {img.shape}"
+        assert transform is not None
+        img = transform(img) # type: ignore
+        assert len(img) == 1
+        assert img[0].shape == (12, 120, 120), f"Expected shape (12, 120, 120), got {img[0].shape}"
+        return img[0]
+    
+    return backbone, full_transform
+
+def load_model_new(csmae_variant: str, device: str) -> Tuple[CSMAEBackbone, TransformFunction]:
+    """Loads a trained model from a checkpoint and returns the data normalization function.
+    The model should be in ./checkpoints/{csmae_variant} with the following files:
+    - weights.ckpt: exactly one checkpoint file
+    - cfg.yaml: configuration file
+
+    Args:
+        csmae_variant (str): 4-characted lowercase CSMAE variant (cecd, cesd, secd, sesd)
+        device (int, optional): GPU device number. Defaults to 0.
+    
+    Returns:
+        Tuple[CSMAEBackbone, TransformFunction]: Loaded model and function that normalizes data.
+    """
+    # According to new README.md
+    cfg = OmegaConf.load(f'./checkpoints/{csmae_variant}/cfg.yaml')
+    model = CSMAEBackbone(**cfg.kwargs)
+
+    state_dict = torch.load(f'./checkpoints/{csmae_variant}/weights.ckpt', map_location="cpu")['state_dict']
+    for k in list(state_dict.keys()):
+        if "backbone" in k:
+            state_dict[k.replace("backbone.", "")] = state_dict[k]
+        del state_dict[k]
+
+    model.load_state_dict(state_dict, strict=True)
+    
+    mean, std = band_combi_to_mean_std(12)
+    norm = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=mean, std=std),
+    ])
+    print(f"{mean=} {std=}")
+
+    def transform(img: np.ndarray) -> torch.Tensor:
+        assert img.shape == (12, 120, 120), f"Expected shape (12, 120, 120), got {img.shape}"
+        # From BEN_DataModule_LMDB_Encoder.py, line 99ff
+        img = np.transpose(img,(2,1,0)) # (C, W, H) -> (H, W, C)
+        assert img.shape == (120, 120, 12), f"Expected shape (120, 120, 12), got {img.shape}"
+        return norm(img) # type: ignore
+
+    return model.eval().to(device), transform
 
 def main(args):
-    model, transform = load_model(args.model, args.device)
+    if args.legacy:
+        model, transform = load_model_legacy(args.model, args.device)
+    else:
+        model, transform = load_model_new(args.model, args.device)
     reader = BENLMDBS1Reader(
         lmdb_dir="csmae_data/BigEarthNetEncoded.lmdb",
         label_type="new",
@@ -173,7 +233,7 @@ def main(args):
     batch_size = args.batch_size or 8
 
     input_tensor = torch.zeros((batch_size, 12, 120, 120), device=args.device)
-    keys, labels, outputs = [], [], []
+    keys, labels19, labels43, outputs = [], [], [], []
     times = 0
     batch = 0
     if args.csv is None:
@@ -186,21 +246,12 @@ def main(args):
         if patch is None:
             patch = reader.read(key)
         keys.append(key)
-        if args.ben43:
-            labels.append(feature_list_to_onehot(patch.labels, BEN43_LABELS)) # type: ignore
-        else:
-            labels.append(feature_list_to_onehot(patch.new_labels, BEN19_LABELS)) # type: ignore
+        labels19.append(feature_list_to_onehot(patch.new_labels, BEN19_LABELS)) # type: ignore
+        labels43.append(feature_list_to_onehot(patch.labels, BEN43_LABELS)) # type: ignore
         img = np.zeros((12, 120, 120))
         img[10] = patch.bandVH.data
         img[11] = patch.bandVV.data
-        # From BEN_DataModule_LMDB_Encoder.py, line 99ff
-        img = np.transpose(img,(2,1,0))
-        assert img.shape == (120, 120, 12), f"Expected shape (120, 120, 12), got {img.shape}"
-        img = transform(img) # type: ignore
-        assert len(img) == 1
-        assert img[0].shape == (12, 120, 120), f"Expected shape (12, 120, 120), got {img[0].shape}"
-        
-        input_tensor[batch] = img[0]
+        input_tensor[batch] = transform(img)
         batch += 1
         if batch == batch_size:
             batch = 0
@@ -221,10 +272,11 @@ def main(args):
     print(f"Average time per patch: {times / len(outputs)}s")
     print("Saving...")
     outputs = np.array(outputs)
-    labels = np.array(labels)
+    labels19 = np.array(labels19)
+    labels43 = np.array(labels43)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "wb") as f:
-        pickle.dump((keys, labels, outputs), f)
+        pickle.dump((keys, labels19, labels43, outputs), f)
     print("Done!")
 
 
@@ -253,9 +305,9 @@ if __name__ == "__main__":
         default="output.pkl"
     )
     parser.add_argument(
-        "--ben43",
+        "--legacy",
         action="store_true",
-        help="Use the 43-labels instead of the 19-labels"
+        help="Use the legacy model loading approach (before update of README.md)"
     )
     parser.add_argument(
         "--device",
@@ -272,8 +324,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print("Using patches:", args.csv or "ALL")
     print("Output file:", args.output)
-    print("Labels:", "BEN43" if args.ben43 else "BEN19")
+    print("Labels:", "BEN19 and BEN43")
     print("Device:", args.device)
     print("Batch size:", args.batch_size)
+    print("Legacy model loader:", args.legacy)
     with torch.no_grad():
         main(args)
