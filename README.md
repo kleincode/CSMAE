@@ -78,6 +78,28 @@ For instance, a model stored under `./trained_models/abcd1234/` can be evaluated
 python retrieval.py abcd1234 0
 ```
 
+## Model Weights
+
+We share model weights for the best-performing CSMAE variants [here](https://tubcloud.tu-berlin.de/s/E4RcbGjzSrjBq7R). To load weights into a backbone, see the following code snippet.
+
+```python
+import torch
+from src.csmae_backbone import CSMAEBackbone
+from omegaconf import OmegaConf
+
+csmae_variant = 'sesd'
+cfg = OmegaConf.load(f'./checkpoints/{csmae_variant}/cfg.yaml')
+model = CSMAEBackbone(**cfg.kwargs)
+
+state_dict = torch.load(f'./checkpoints/{csmae_variant}/weights.ckpt', map_location="cpu")['state_dict']
+for k in list(state_dict.keys()):
+    if "backbone" in k:
+        state_dict[k.replace("backbone.", "")] = state_dict[k]
+    del state_dict[k]
+
+model.load_state_dict(state_dict, strict=True)
+```
+
 ## Acknowledgement
 
 This work is supported by the European Research Council
