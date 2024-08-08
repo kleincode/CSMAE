@@ -53,7 +53,7 @@ def mlp_classifier(
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     batch_size: int = 64,
     optim_supplier: Callable[[nn.Module], torch.optim.Optimizer] = lambda model: torch.optim.Adam(model.parameters()),
-    criterion: nn.Module = nn.CrossEntropyLoss(),
+    criterion: nn.Module = nn.BCEWithLogitsLoss(),
     classes: int = 19,
     verbose: bool = True,
 ) -> Dict[str, object]:

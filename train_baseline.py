@@ -110,7 +110,7 @@ def train_baseline(
     model.to(device)
     
     optim = torch.optim.Adam(model.parameters())
-    criterion = torch.nn.CrossEntropyLoss()
+    criterion = torch.nn.BCEWithLogitsLoss()
     
     train_losses, val_losses, val_f2s, val_hls = [], [], [], []
     for epoch in range(1, epochs+1):
