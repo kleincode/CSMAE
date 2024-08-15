@@ -15,7 +15,7 @@ auto_umap/
 # datasets dir
 datasets/
 
-trained_models/
+trained_models/CSMAE*
 
 # saved models
 *.pt

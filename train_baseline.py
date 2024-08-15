@@ -73,8 +73,11 @@ def train_baseline(
     save_every_epochs: int = 2,
     architecture: Literal["resnet50", "resnet18"] = "resnet50"
 ):
+    # for reproducibility
     torch.manual_seed(42)
     np.random.seed(42)
+    
+    # reader for Sentinel-1 data
     reader = BENLMDBS1Reader(
         lmdb_dir="csmae_data/BigEarthNetEncoded.lmdb",
         label_type="new",
@@ -83,6 +86,7 @@ def train_baseline(
     )
     out_folder.mkdir(parents=True, exist_ok=True)
     
+    # preprocessing + simple training augmentations
     mean, std = band_combi_to_mean_std(2)
     train_pipeline = transforms.Compose([
         transforms.RandomHorizontalFlip(),
@@ -93,13 +97,14 @@ def train_baseline(
         transforms.Normalize(mean=mean, std=std),
     ])
 
+    # datasets and loaders
     train_dataset = BENS1Dataset(splits_dir / "train.csv", reader, train_pipeline)
     val_dataset = BENS1Dataset(splits_dir / "val.csv", reader, test_pipeline)
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
-    
+    # create model
     if architecture == "resnet50":
         model = resnet50(pretrained=False, num_classes=19)
     elif architecture == "resnet18":
@@ -112,8 +117,10 @@ def train_baseline(
     optim = torch.optim.Adam(model.parameters())
     criterion = torch.nn.BCEWithLogitsLoss()
     
+    # training loop
     train_losses, val_losses, val_f2s, val_hls = [], [], [], []
     for epoch in range(1, epochs+1):
+        # training
         model.train()
         train_loss = 0.0
         pb = tqdm(train_loader)
@@ -129,6 +136,8 @@ def train_baseline(
             train_loss += loss_item
             pb.set_description(f"loss={loss_item:.5f}")
         train_loss /= len(train_loader)
+        
+        # validation
         val_loss, val_preds, val_labels = eval(model, val_loader, criterion, device)
         val_thresholded = val_preds > 0
         val_f2 = fbeta_score(val_labels, val_thresholded, average="samples", beta=2)
@@ -140,6 +149,7 @@ def train_baseline(
         val_f2s.append(val_f2)
         val_hls.append(val_hl)
         
+        # saving progress
         if epoch % save_every_epochs == 0 or epoch == epochs:
             model_file = out_folder / f"epoch_{epoch}.pth"
             torch.save(model.state_dict(), model_file)
@@ -158,7 +168,7 @@ def train_baseline(
     assert Y_test_scores is not None and Y_test is not None
     print(f"Test loss: {test_loss:.4f}")
     
-    # Make plots
+    # Plot training curve
     x = np.arange(1, len(train_losses) + 1)
     plt.plot(x, train_losses, label="train")
     plt.plot(x, val_losses, label="val")
@@ -189,7 +199,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--device", type=torch.device, default=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--out_folder", type=Path, default=Path("trained_models/resnet18"))
+    parser.add_argument("--out_folder", type=Path, required=True)
     parser.add_argument("--save_every_epochs", type=int, default=2)
     parser.add_argument("--architecture", type=str, default="resnet50")
     args = parser.parse_args()

@@ -1,3 +1,7 @@
+"""
+Train a neural classifier on the CSMAE output features and evaluate it.
+Use --n_layers 1 for linear probing or --n_layers 4 for the 4-layer MLP.
+"""
 from typing import Callable, Dict, Optional, List, Tuple
 import numpy as np
 import pickle
@@ -78,7 +82,7 @@ def mlp_classifier(
     val_dataloader = prepare_dataloader(X_val, Y_val, device, batch_size=batch_size)
     test_dataloader = prepare_dataloader(X_test, Y_test, device, batch_size=batch_size)
     
-    # Training
+    # Train loop
     model = create_model(n_features, n_classes, n_layers).to(device)
     if verbose:
         print("Model:", model)

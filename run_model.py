@@ -1,3 +1,9 @@
+"""
+Used to run a CSMAE model on the BigEarthNet dataset in LMDB representation.
+Outputs pickle files with the keys, labels and output vectors of the model.
+"""
+
+
 from typing import List, Dict
 from argparse import ArgumentParser
 from time import time
@@ -104,6 +110,7 @@ def feature_list_to_onehot(lst: List[str], label_map: Dict[str, int] = BEN19_LAB
     assert res.sum() >= 1, "Result Tensor is all zeros - this is not allowed"
     return res
 
+# My initial (and still correct) implementation based on the source code and some experiments
 def load_model_legacy(model_id: str, device: str) -> Tuple[CrossModalMaskedAutoencoderViT, TransformFunction]:
     """Loads a trained model from a checkpoint, returning the model and the data augmentation pipeline.
     The model should be in ./trained_models/{model_id} with the following files:
@@ -178,6 +185,7 @@ def load_model_legacy(model_id: str, device: str) -> Tuple[CrossModalMaskedAutoe
     
     return backbone, full_transform
 
+# New implementation based on the README.md, which was updated by the authors after I started working on this project
 def load_model_new(csmae_variant: str, device: str) -> Tuple[CSMAEBackbone, TransformFunction]:
     """Loads a trained model from a checkpoint and returns the data normalization function.
     The model should be in ./checkpoints/{csmae_variant} with the following files:
@@ -191,7 +199,6 @@ def load_model_new(csmae_variant: str, device: str) -> Tuple[CSMAEBackbone, Tran
     Returns:
         Tuple[CSMAEBackbone, TransformFunction]: Loaded model and function that normalizes data.
     """
-    # According to new README.md
     cfg = OmegaConf.load(f'./checkpoints/{csmae_variant}/cfg.yaml')
     model = CSMAEBackbone(**cfg.kwargs)
 

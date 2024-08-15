@@ -1,3 +1,6 @@
+"""
+Train a random forest classifier on the CSMAE output features and evaluate it.
+"""
 from typing import Dict, Optional, Literal, Union
 import pickle
 import numpy as np
@@ -25,7 +28,7 @@ def random_forest(
     verbose: bool = True,
     random_state: Optional[int] = 42,
 ) -> Dict[str, object]:
-    """Train a random forest classifier and evaluate on test set.
+    """Train random forest classifiers and evaluate them on the test set.
 
     Args:
         train_file (Path): File containing training features and labels
@@ -55,7 +58,7 @@ def random_forest(
         print(f"criterion: {criterion}, max_depth: {max_depth}, min_samples_split: {min_samples_split}, min_samples_leaf: {min_samples_leaf}, max_features: {max_features}, bootstrap: {bootstrap}, n_jobs: {n_jobs}, random_state: {random_state}")
         print("Training random forest classifier with n_estimators=10...")
     
-    # Training
+    # Training the base model with n_estimators=10
     model10 = RandomForestClassifier(
         n_estimators=10,
         criterion=criterion,
@@ -69,17 +72,18 @@ def random_forest(
         random_state=random_state,
     ).fit(X_train, Y_train)
     
-    # Testing
+    # Testing the base model
     Y_test_scores10 = np.array(model10.predict_proba(X_test))[:,:,1].T # select class "true" and transpose to get shape (n_samples, n_classes)
     assert Y_test_scores10.shape == Y_test.shape, f"Y_test_scores10.shape {Y_test_scores10.shape} must equal Y_test.shape {Y_test.shape}"
     
-    # Training + validation
+    # Training + validation for different n_estimators
     best_model = None
     scores = dict()
     best_n_estimators = 0
     pb = tqdm([1, 2, 5, 10, 15, 20, 25, 30, 40, 50], desc="Validate n_estimators")
     for n_estimators in pb:
         pb.set_postfix(n_estimators=n_estimators)
+        # Training
         model = RandomForestClassifier(
             n_estimators=n_estimators,
             criterion=criterion,
@@ -92,19 +96,20 @@ def random_forest(
             n_jobs=n_jobs,
             random_state=random_state,
         ).fit(X_train, Y_train)
+        # Validation
         Y_pred = model.predict(X_val)
-        score = hamming_loss(Y_val, Y_pred)
+        score = hamming_loss(Y_val, Y_pred) # other metrics lead to the same result (larger n_estimators = better), but take longer
         scores[n_estimators] = score
         if best_model is None or score < scores[best_n_estimators]:
             best_model = model
             best_n_estimators = n_estimators
     
-    # Testing
+    # Testing the best model
     assert best_model is not None
     Y_test_scores_best = np.array(best_model.predict_proba(X_test))[:,:,1].T
     assert Y_test_scores_best.shape == Y_test.shape, f"Y_test_scores_best.shape {Y_test_scores_best.shape} must equal Y_test.shape {Y_test.shape}"
     
-    # Save model
+    # Save models
     out_folder.mkdir(parents=True, exist_ok=True)
     model_file = out_folder / "model10.pkl"
     with open(model_file, "wb") as f:
@@ -117,7 +122,7 @@ def random_forest(
     if verbose:
         print(f"Model saved to {model_file}")
     
-    # Plots
+    # Plot hyperparameter validation
     fig, ax = plt.subplots()
     x = list(scores.keys())
     y = list(scores.values())
@@ -128,7 +133,7 @@ def random_forest(
     with open(out_folder / "n_estimators_validation.json", "w") as f:
         json.dump(scores, f)
     
-    # Report
+    # Report for the base model
     report10, main_metrics10 = get_ben_report(Y_test, Y_test_scores10, decision_threshold=0.5)
     if verbose:
         print(report10)
@@ -137,6 +142,7 @@ def random_forest(
     with open(out_folder / "summary10.txt", "w") as f:
         f.write(main_metrics10)
     
+    # Report for the best model
     report_best, main_metrics_best = get_ben_report(Y_test, Y_test_scores_best, decision_threshold=0.5)
     if verbose:
         print(report_best)
