@@ -1,3 +1,81 @@
+# CSMAE - Evaluation
+This is a fork of the original CSMAE repository by Hackstein et al. As part of my course work for the 'Hot Topics in Computer Vision' seminar, I evaluated the models proposed and trained by the original authors on the BigEarthNet dataset (only!) for Sentinel-1 imagery.
+
+## Requirements
+Here's what I did to get the model running on BEN:
+1. Download and unzip `BigEarthNet-S1` from [bigearth.net](https://bigearth.net/) into `csmae_data/BigEarthNet-S1-v1.0`
+2. Install BigEarthNet-encoder package to create an lmdb file, the format used by the scripts in the repository:
+```bash
+pip install bigearthnet-encoder
+cd csmae_data
+ben_encoder write-s1-lmdb-with-lbls ./BigEarthNet-S1-v1.0
+mv S1_lmdb.db BigEarthNetEncoded.lmdb
+```
+3. Recreate the Conda environment provided by the authors. I used WSL2.
+```bash
+conda env create --name csmae --file environment.yaml
+```
+4. I received the original model weights from the authors and put them into `trained_models/CSMAE-CECD`, `trained_models/CSMAE-CESD`, etc.
+
+## Running the models
+`run_model.py` can be used to run any of the four models on a given data subset (as defined by a CSV) and export the image features to a Pickle file, for example:
+```bash
+python run_model.py --model CSMAE-CESD --csv BigEarthNet-MM_19-classes_models/splits/train.csv --output features_out/cesd/train.pkl
+```
+For all arguments, see `run_model.py`. The generated Pickle file contains a tuple `(keys, labels19, labels43, outputs)` where `keys` is a list of length `N` of all the sample keys, `labels19` is a `N x 19` boolean array containing the BEN19 labels, `labels43` is a `N x 43` boolean array containing the BEN43 labels, and `outputs` is a `N x 768` array containing the encoder arrays/embeddings. These output pickle files can then be read by all classifier scripts and the UMAP visualizer.
+
+## Visualization
+`visualize_ben.ipynb` contains basic visualizations and statistics about the BEN19 dataset. `visualize_umap.ipynb` visualizes the CSMAE feature vectors using UMAP. The output images are available under `imgs`.
+
+## Training neural classifiers (linear, MLP)
+Use `mlp_classifier.py` to train a neural classifier on the feature vectors using PyTorch.
+
+Example usage to train a linear classifier:
+```bash
+python mlp_classifier.py features_out/cesd/train.pkl features_out/cesd/val.pkl features_out/cesd/test.pkl --out experiments/CSMAE-CESD/ben19_linear_probing --n_layers 1 --classes 19
+```
+
+Example usage to train the small MLP with four layers:
+```bash
+python mlp_classifier.py features_out/cesd/train.pkl features_out/cesd/val.pkl features_out/cesd/test.pkl --out experiments/CSMAE-CESD/ben19_mlp4 --n_layers 4 --classes 19
+```
+The results are in the `experiments` folder and contain a loss curve (SVG), a full classification report and a summary file.
+
+## Training random forests
+Use `random_forest.py` to train random forests on the feature vectors using sklearn.
+
+Example usage:
+```bash
+python random_forest.py features_out/cesd/train.pkl features_out/cesd/val.pkl features_out/cesd/test.pkl --out experiments/CSMAE-CESD/ben19_random_forest --classes 19
+```
+
+The script first trains a base random forest model with the following fixed hyperparameters for comparability to other students' works:
+```
+n_estimators=10	<-- The more, the better but uses linearly more time and memory
+criterion='gini'
+max_depth=None
+min_samples_split=10
+min_samples_leaf=10
+max_features='sqrt'
+max_leaf_nodes=10000	<-- The more, the better. A question of memory.
+bootstrap=False
+n_jobs=-1			<-- For multi-core processing (-1 … use all cores)
+```
+Next, the hyperparameter `n_estimators` is optimized on the validation set in the range between 1 and 50. In all experiments, the maximum value for `n_estimators` (50) was optimal. The script saves the models, the classification reports and summaries for both the reference and the optimal model to the output folder as well as the hyperparameter optimization curve (n_estimators vs validation Hamming loss). Results are in the `experiments` folder.
+
+## Training baseline models
+`train_baseline.py` was used to train baseline models (resnet50, resnet18) directly on the supervised scene classification task on BEN19.
+
+Example usage:
+```bash
+python train_baseline.py --epochs 10 --out_folder trained_models/resnet18_10e --architecture resnet18
+```
+Checkpoints, training and validation losses, validation metrics, classification report and summary file are saved to the output folder. Everything except the checkpoints is available under `trained_models/resnet**_10e`.
+
+---
+
+Original README:
+
 # Exploring Masked Autoencoders for Sensor-Agnostic Image Retrieval in Remote Sensing
 
 ![Alt text](csmae.png?raw=true "Model: Cross-Sensor Masked Autoencoders")

@@ -1,0 +1,9 @@
+
+kwargs:
+  patch_size: 15
+  img_size: 120
+  in_chans: 12
+  multi_sensor_encoder_depth: 0
+  cross_sensor_encoder_depth: 12
+  masking_strategy: random
+  global_pool: avg
